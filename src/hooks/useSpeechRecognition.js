@@ -33,16 +33,23 @@ export function useSpeechRecognition() {
     transcriptionRef.current = transcription;
   }, [transcription]);
 
+  // Handle Audio Context for Chrome Android (needs user gesture)
+  const resumeAudioContext = useCallback(() => {
+    if (typeof window !== 'undefined' && window.AudioContext) {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+  }, []);
+
   const initRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setIsSupported(false);
-      setError('Navegador sem suporte a voz.');
       return null;
     }
 
     const rec = new SpeechRecognition();
-    rec.continuous = false; // Manually restarting is MORE stable on many Android flavors
+    rec.continuous = true; 
     rec.interimResults = true;
     rec.lang = 'pt-BR';
 
@@ -63,11 +70,12 @@ export function useSpeechRecognition() {
 
     rec.onerror = (event) => {
       console.warn('Speech recognition error event:', event.error);
-      if (['no-speech', 'aborted', 'audio-capture'].includes(event.error)) return;
-      
       if (event.error === 'network') {
-         // Silently wait for restart
+         // Silently restart on network blips
          return;
+      }
+      if (event.error === 'not-allowed') {
+        setError('Microfone bloqueado. Verifique as permissões do site.');
       }
     };
 
@@ -79,7 +87,6 @@ export function useSpeechRecognition() {
           try {
             recognitionRef.current.start();
           } catch (e) {
-            // Re-init if start fails repeatedly
             recognitionRef.current = initRecognition();
             if (recognitionRef.current) recognitionRef.current.start();
           }
@@ -108,6 +115,7 @@ export function useSpeechRecognition() {
   }, [initRecognition]);
 
   const startRecording = useCallback(async () => {
+    resumeAudioContext();
     setError(null);
     setTranscription('');
     transcriptionRef.current = '';
@@ -127,19 +135,19 @@ export function useSpeechRecognition() {
       isRecordingRef.current = true;
       setIsRecording(true);
 
-      // Explicitly start or restart recognition
-      try {
-        recognitionRef.current?.start();
-      } catch (e) {
-        // If already started or failed, try to regenerate
-        recognitionRef.current = initRecognition();
-        recognitionRef.current?.start();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          recognitionRef.current = initRecognition();
+          recognitionRef.current?.start();
+        }
       }
 
     } catch (err) {
-      setError('Erro ao abrir microfone. Verifique as permissões.');
+      setError('Sem acesso ao microfone.');
     }
-  }, [initRecognition]);
+  }, [initRecognition, resumeAudioContext]);
 
   const stopRecording = useCallback(() => {
     const finalTranscription = transcriptionRef.current;

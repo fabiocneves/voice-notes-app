@@ -56,7 +56,23 @@ body {
   gap: 0.5rem;
   background: linear-gradient(135deg, #a5b4fc, #6366f1);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.version-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 0.2rem 0.5rem;
+  border-radius: 20px;
+  letter-spacing: 0.05em;
+  -webkit-text-fill-color: var(--accent);
+  align-self: center;
+  position: relative;
+  top: 2px;
 }
 
 /* Button utility */

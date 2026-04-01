@@ -12,7 +12,7 @@ function App() {
   return (
     <div className="app-container">
       <header className="header">
-        <h1><Mic size={32} color="var(--accent)" /> VoiceNotes</h1>
+        <h1><Mic size={32} color="var(--accent)" /> VoiceNotes <span className="version-badge">v{import.meta.env.VITE_APP_VERSION}</span></h1>
         {/* Mock cloud sync indicator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
           <Cloud size={18} /> 

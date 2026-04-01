@@ -15,6 +15,18 @@
   --transition: all 0.2s ease-in-out;
 }
 
+body.light-theme {
+  --bg-main: #f1f5f9; /* slate-100 */
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --text-main: #1e293b; /* slate-800 */
+  --text-muted: #64748b; /* slate-500 */
+  --accent: #4f46e5;
+  --accent-glow: rgba(79, 70, 229, 0.15);
+  --accent-hover: #4338ca;
+  --border-color: #e2e8f0;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
@@ -129,6 +141,25 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.theme-toggle {
+  background: var(--bg-card);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.theme-toggle:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+  transform: rotate(15deg);
 }
 
 /* Main Layout Grid */

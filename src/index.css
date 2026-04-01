@@ -444,6 +444,7 @@ body {
   color: var(--text-main);
   display: -webkit-box;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
@@ -780,4 +781,118 @@ body {
 .edit-textarea:focus {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* View Toggle */
+.view-toggle {
+  display: flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.view-toggle .btn-icon-only {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.view-toggle .btn-icon-only:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+}
+
+.view-toggle .btn-icon-only.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+/* Notes Table */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--bg-card);
+  border-radius: var(--panel-radius);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.notes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.notes-table th, .notes-table td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.notes-table th {
+  background: var(--bg-main);
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+}
+
+.notes-table th:hover {
+  color: var(--accent);
+  background: var(--bg-card-hover);
+}
+
+.notes-table tr:hover td {
+  background: var(--bg-card-hover);
+}
+
+.notes-table tr:last-child td {
+  border-bottom: none;
+}
+
+.table-content-cell {
+  max-width: 400px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.table-edit-input {
+  width: 100%;
+  background: var(--bg-main);
+  border: 1px solid var(--accent);
+  color: var(--text-main);
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.table-audio-player {
+  margin-top: 0.5rem;
+  max-width: 200px;
+}
+
+.table-audio-player .audio-player {
+  height: 30px;
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .notes-table th:nth-child(2),
+  .notes-table td:nth-child(2) {
+    display: none;
+  }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Search, Cloud, Edit2, Check, X, Calendar as CalendarIcon } from 'lucide-react';
+import { Trash2, Search, Cloud, Edit2, Check, X, Calendar as CalendarIcon, LayoutGrid, List } from 'lucide-react';
 import { CustomCalendar } from './CustomCalendar';
 
 const AudioPlayer = ({ blob }) => {
@@ -23,6 +23,8 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' ou 'table'
+  const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
   
   const filteredNotes = notes.filter(note => {
     // text search
@@ -61,8 +63,30 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
     return true;
   });
 
-  // Group notes by date
-  const groupedNotes = filteredNotes.reduce((groups, note) => {
+  const sortedNotes = [...filteredNotes].sort((a, b) => {
+    let aVal = a[sortConfig.key];
+    let bVal = b[sortConfig.key];
+    
+    if (sortConfig.key === 'createdAt') {
+      aVal = new Date(aVal).getTime();
+      bVal = new Date(bVal).getTime();
+    }
+
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const requestSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // Group notes by date (only if in grid/card view)
+  const groupedNotes = sortedNotes.reduce((groups, note) => {
      const date = new Date(note.createdAt);
      const today = new Date();
      const yesterday = new Date(today);
@@ -84,9 +108,12 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
      return groups;
   }, {});
 
-  const formatDate = (dateString) => {
-    const timeOptions = { hour: '2-digit', minute: '2-digit' };
-    return new Date(dateString).toLocaleTimeString('pt-BR', timeOptions);
+  const formatDate = (dateString, showTime = true) => {
+    const options = { day: '2-digit', month: '2-digit', year: 'numeric' };
+    if (showTime) {
+      return new Date(dateString).toLocaleString('pt-BR', { ...options, hour: '2-digit', minute: '2-digit' });
+    }
+    return new Date(dateString).toLocaleDateString('pt-BR', options);
   };
 
   const handleEditClick = (note) => {
@@ -149,6 +176,23 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
              )}
           </div>
         )}
+
+        <div className="view-toggle">
+          <button 
+            className={`btn-icon-only ${viewMode === 'cards' ? 'active' : ''}`}
+            onClick={() => setViewMode('cards')}
+            title="Vista em Cards"
+          >
+            <LayoutGrid size={20} />
+          </button>
+          <button 
+            className={`btn-icon-only ${viewMode === 'table' ? 'active' : ''}`}
+            onClick={() => setViewMode('table')}
+            title="Vista em Tabela"
+          >
+            <List size={20} />
+          </button>
+        </div>
       </div>
 
       {showCalendar && (
@@ -161,12 +205,12 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
       )}
 
       {/* Rest of note cards... */}
-      {Object.keys(groupedNotes).length === 0 ? (
+      {sortedNotes.length === 0 ? (
         <div className="empty-state">
           <Cloud size={48} opacity={0.2} />
           <p>{notes.length === 0 ? "Grave uma nota para começar!" : "Nenhuma nota encontrada."}</p>
         </div>
-      ) : (
+      ) : viewMode === 'cards' ? (
         Object.entries(groupedNotes).map(([dateLabel, notesGroup]) => (
           <div key={dateLabel} className="note-group">
             <h3 className="group-header">{dateLabel}</h3>
@@ -229,6 +273,58 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
             </div>
           </div>
         ))
+      ) : (
+        <div className="table-responsive">
+          <table className="notes-table">
+            <thead>
+              <tr>
+                <th onClick={() => requestSort('createdAt')}>Data {sortConfig.key === 'createdAt' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                <th onClick={() => requestSort('topic')}>Tópico {sortConfig.key === 'topic' && (sortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                <th>Conteúdo</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedNotes.map(note => (
+                <tr key={note.id}>
+                  <td>{formatDate(note.createdAt)}</td>
+                  <td>
+                    <span className="tag topic">#{note.topic}</span>
+                  </td>
+                  <td className="table-content-cell">
+                    {editingId === note.id ? (
+                      <input 
+                        type="text"
+                        className="table-edit-input"
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        onBlur={() => handleSaveEdit(note.id)}
+                        autoFocus
+                      />
+                    ) : (
+                      note.content
+                    )}
+                    {note.audioBlob && (
+                      <div className="table-audio-player">
+                        <AudioPlayer blob={note.audioBlob} />
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <div className="note-actions">
+                      <button onClick={() => handleEditClick(note)} title="Editar">
+                        <Edit2 size={16} />
+                      </button>
+                      <button onClick={() => onDeleteNote(note.id)} title="Excluir">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

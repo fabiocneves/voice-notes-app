@@ -17,7 +17,7 @@ export function useNotesDB() {
     const topic = tags.length > 0 ? tags[0] : 'General';
     const finalTopic = topic || 'S/ Tópico';
 
-    // Smart Date Detection
+    // Smart Date Detection (shared logic for voice/manual)
     const detectedDate = extractDate(transcription);
     const createdAt = detectedDate || new Date().toISOString();
 
@@ -46,13 +46,16 @@ export function useNotesDB() {
     const newNote = { ...note, ...updates, updatedAt: new Date().toISOString() };
     
     if (updates.content !== undefined) {
+      // Recalculate tags
       const tags = extractTags(newNote.content);
       newNote.topic = tags.length > 0 ? tags[0] : 'General';
       newNote.tags = tags.filter(t => t !== newNote.topic);
       
-      // Update date if edited text has a new date mention?
-      // Optional: const newDate = extractDate(updates.content);
-      // if (newDate) newNote.createdAt = newDate;
+      // Auto-re-file: If a date is mentioned in the new text, update createdAt
+      const newDate = extractDate(newNote.content);
+      if (newDate) {
+        newNote.createdAt = newDate;
+      }
     }
 
     await db.notes.put(newNote);

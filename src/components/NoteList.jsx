@@ -18,7 +18,7 @@ const AudioPlayer = ({ blob }) => {
 };
 
 export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onUpdateNote }) {
-  const [filterRange, setFilterRange] = useState('all');
+  const [filterRange, setFilterRange] = useState('today');
   const [filterDate, setFilterDate] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState('');
@@ -39,7 +39,9 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
     const today = new Date();
     
     if (filterRange !== 'all') {
-      if (filterRange === 'week') {
+      if (filterRange === 'today') {
+        if (noteDate.toDateString() !== today.toDateString()) return false;
+      } else if (filterRange === 'week') {
         const weekAgo = new Date(today);
         weekAgo.setDate(weekAgo.getDate() - 7);
         if (noteDate < weekAgo) return false;
@@ -123,6 +125,7 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
             value={filterRange}
             onChange={(e) => setFilterRange(e.target.value)}
           >
+            <option value="today">Hoje</option>
             <option value="all">Tudo</option>
             <option value="week">Semana</option>
             <option value="month">Mês</option>

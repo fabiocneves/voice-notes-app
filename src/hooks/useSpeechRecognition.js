@@ -33,40 +33,20 @@ export function useSpeechRecognition() {
     transcriptionRef.current = transcription;
   }, [transcription]);
 
-  useEffect(() => {
-    // 1. HTTPS guard — Web Speech API requires HTTPS on mobile
-    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    if (location.protocol !== 'https:' && !isLocalhost) {
-      setIsSupported(false);
-      setError('⚠️ A transcrição requer conexão segura (HTTPS). Acesse o app pelo link seguro (https://...).');
-      return;
-    }
-
-    // 2. API support check
+  const initRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setIsSupported(false);
-      setError('Seu navegador não suporta transcrição automática. No Android use o Chrome, no iPhone o Safari 14.1+. Você ainda pode adicionar notas manualmente.');
-      return;
+      setError('Navegador sem suporte a voz.');
+      return null;
     }
 
-    const recognition = new SpeechRecognition();
-    // Keep continuous:true — it's actually more stable on Android when combined
-    // with a proper restart-on-end with a small delay
-    recognition.continuous      = true;
-    recognition.interimResults  = true;
-    recognition.lang            = 'pt-BR';
-    recognition.maxAlternatives = 1;
+    const rec = new SpeechRecognition();
+    rec.continuous = false; // Manually restarting is MORE stable on many Android flavors
+    rec.interimResults = true;
+    rec.lang = 'pt-BR';
 
-    recognition.onstart = () => {
-      // Recognition successfully started — clear any pending restart timer
-      if (restartTimerRef.current) {
-        clearTimeout(restartTimerRef.current);
-        restartTimerRef.current = null;
-      }
-    };
-
-    recognition.onresult = (event) => {
+    rec.onresult = (event) => {
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
@@ -81,100 +61,93 @@ export function useSpeechRecognition() {
       setTranscription(full);
     };
 
-    recognition.onerror = (event) => {
-      // These are benign / expected on mobile — do NOT surface to user
+    rec.onerror = (event) => {
+      console.warn('Speech recognition error event:', event.error);
       if (['no-speech', 'aborted', 'audio-capture'].includes(event.error)) return;
-
+      
       if (event.error === 'network') {
-        // Network blip — schedule a restart instead of giving up
-        if (isRecordingRef.current) {
-          restartTimerRef.current = setTimeout(() => {
-            if (!isRecordingRef.current) return;
-            try { recognition.start(); } catch (e) { /* ignore */ }
-          }, 500);
-        }
-        return;
+         // Silently wait for restart
+         return;
       }
-
-      console.error('Speech recognition error:', event.error);
-      setError(`Erro no reconhecimento de voz: ${event.error}`);
     };
 
-    recognition.onend = () => {
-      // CRITICAL FIX: Android Chrome needs ~250ms gap between sessions
-      // Calling start() immediately causes a silent InvalidStateError
+    rec.onend = () => {
       if (isRecordingRef.current) {
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
         restartTimerRef.current = setTimeout(() => {
           if (!isRecordingRef.current) return;
-          try { recognition.start(); } catch (e) { /* ignore */ }
-        }, 250);
+          try {
+            recognitionRef.current.start();
+          } catch (e) {
+            // Re-init if start fails repeatedly
+            recognitionRef.current = initRecognition();
+            if (recognitionRef.current) recognitionRef.current.start();
+          }
+        }, 300);
       }
     };
 
-    recognitionRef.current = recognition;
+    return rec;
+  }, []);
+
+  useEffect(() => {
+    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (location.protocol !== 'https:' && !isLocalhost) {
+      setIsSupported(false);
+      setError('⚠️ HTTPS necessário para voz no celular.');
+      return;
+    }
+
+    recognitionRef.current = initRecognition();
 
     return () => {
       isRecordingRef.current = false;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      try { recognition.abort(); } catch (e) { /* ignore */ }
+      try { recognitionRef.current?.abort(); } catch (e) {}
     };
-  }, []);
+  }, [initRecognition]);
 
   const startRecording = useCallback(async () => {
     setError(null);
     setTranscription('');
     transcriptionRef.current = '';
-    accumulatedRef.current   = '';
-    audioChunksRef.current   = [];
+    accumulatedRef.current = '';
+    audioChunksRef.current = [];
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
       const mimeType = getSupportedMimeType();
-      const mediaRecorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
-
-      mediaRecorder.ondataavailable = (e) => {
+      mediaRecorderRef.current = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
+      mediaRecorderRef.current.start(500);
 
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(500);
-
-      if (recognitionRef.current) {
-        isRecordingRef.current = true;
-        try { recognitionRef.current.start(); } catch (e) {
-          console.warn('Recognition start error:', e);
-        }
-      }
-
+      isRecordingRef.current = true;
       setIsRecording(true);
-    } catch (err) {
-      console.error('Error starting recording:', err);
-      if (err.name === 'NotAllowedError') {
-        setError('Permissão de microfone negada. Verifique as configurações do navegador e recarregue a página.');
-      } else if (err.name === 'NotFoundError') {
-        setError('Nenhum microfone encontrado neste dispositivo.');
-      } else {
-        setError('Não foi possível acessar o microfone: ' + err.message);
+
+      // Explicitly start or restart recognition
+      try {
+        recognitionRef.current?.start();
+      } catch (e) {
+        // If already started or failed, try to regenerate
+        recognitionRef.current = initRecognition();
+        recognitionRef.current?.start();
       }
+
+    } catch (err) {
+      setError('Erro ao abrir microfone. Verifique as permissões.');
     }
-  }, []);
+  }, [initRecognition]);
 
   const stopRecording = useCallback(() => {
     const finalTranscription = transcriptionRef.current;
-
     isRecordingRef.current = false;
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current);
-      restartTimerRef.current = null;
-    }
     setIsRecording(false);
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
 
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
-    }
+    try { recognitionRef.current?.stop(); } catch (e) {}
 
     return new Promise((resolve) => {
       const recorder = mediaRecorderRef.current;
@@ -182,26 +155,14 @@ export function useSpeechRecognition() {
         resolve({ finalTranscription, audioBlob: null });
         return;
       }
-
-      const mimeType = recorder.mimeType || 'audio/webm';
-
       recorder.onstop = () => {
-        recorder.stream.getTracks().forEach(track => track.stop());
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        recorder.stream.getTracks().forEach(t => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
         resolve({ finalTranscription, audioBlob });
       };
-
       recorder.stop();
     });
   }, []);
 
-  return {
-    isRecording,
-    transcription,
-    setTranscription,
-    startRecording,
-    stopRecording,
-    error,
-    isSupported,
-  };
+  return { isRecording, transcription, startRecording, stopRecording, error, isSupported };
 }

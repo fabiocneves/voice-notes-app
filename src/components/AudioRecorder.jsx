@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mic, Square, Save, RotateCcw } from 'lucide-react';
+import { Mic, Square } from 'lucide-react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 
 export function AudioRecorder({ onSaveNote }) {
@@ -9,53 +9,71 @@ export function AudioRecorder({ onSaveNote }) {
     setTranscription,
     startRecording,
     stopRecording,
-    error
+    error,
+    isSupported,
   } = useSpeechRecognition();
 
-  const [finalText, setFinalText] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
+  // For iOS/unsupported browsers: allow manual text entry
+  const [manualText, setManualText] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
 
   const handleStart = () => {
-    setFinalText('');
-    setShowPreview(true);
     startRecording();
   };
 
   const handleStop = () => {
-    const { finalTranscription, audioBlob } = stopRecording();
-    const textToSave = finalTranscription || transcription;
-    
-    if (textToSave.trim()) {
+    const { audioBlob } = stopRecording();
+    const textToSave = transcription.trim();
+
+    if (textToSave) {
       onSaveNote(textToSave, audioBlob);
+    } else if (!isSupported && audioBlob) {
+      // If speech API not supported, still save the audio blob so user can add text manually
+      setShowManualInput(true);
     }
-    
+
     setTranscription('');
-    setFinalText('');
-    setShowPreview(false);
   };
 
-  // We removed handleSave and handleDiscard since it autosaves
+  const handleSaveManual = () => {
+    if (manualText.trim()) {
+      onSaveNote(manualText, null);
+      setManualText('');
+      setShowManualInput(false);
+    }
+  };
 
+  const liveLabel = isSupported
+    ? 'Gravando e transcrevendo...'
+    : 'Gravando áudio...';
 
   return (
     <div className="card record-panel">
       <h2 className="record-header-text">Gravar Nova Nota</h2>
-      
+
       {error && (
-        <div style={{ color: 'var(--danger)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+        <div className="error-banner">
           {error}
         </div>
       )}
 
       <div className="record-btn-container">
-        {!isRecording && !showPreview && (
-          <button className="record-button-main" onClick={handleStart} title="Começar a gravar">
+        {!isRecording && (
+          <button
+            className="record-button-main"
+            onClick={handleStart}
+            title="Começar a gravar"
+          >
             <Mic size={32} />
           </button>
         )}
-        
+
         {isRecording && (
-          <button className="record-button-main recording" onClick={handleStop} title="Parar gravação">
+          <button
+            className="record-button-main recording"
+            onClick={handleStop}
+            title="Parar gravação"
+          >
             <Square size={32} fill="currentColor" />
           </button>
         )}
@@ -64,15 +82,38 @@ export function AudioRecorder({ onSaveNote }) {
       {isRecording && (
         <div className="transcription-area">
           <div className="live-indicator">
-            <span className="live-dot"></span> Gravando e transcrevendo...
+            <span className="live-dot"></span> {liveLabel}
           </div>
-          <textarea 
+          {isSupported && (
+            <textarea
+              className="transcription-preview active"
+              value={transcription}
+              readOnly
+              disabled
+              placeholder="A transcrição aparecerá aqui..."
+            />
+          )}
+        </div>
+      )}
+
+      {/* Fallback manual text entry for iOS or unsupported browsers */}
+      {showManualInput && (
+        <div className="transcription-area">
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
+            Áudio salvo! Adicione o texto manualmente:
+          </p>
+          <textarea
             className="transcription-preview active"
-            value={transcription}
-            readOnly
-            disabled
-            placeholder="A transcrição aparecerá aqui..."
+            value={manualText}
+            onChange={(e) => setManualText(e.target.value)}
+            placeholder="Digite o conteúdo da nota aqui..."
+            autoFocus
           />
+          <div className="save-controls">
+            <button className="btn btn-primary" onClick={handleSaveManual}>
+              Salvar Nota
+            </button>
+          </div>
         </div>
       )}
     </div>

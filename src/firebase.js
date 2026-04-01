@@ -18,5 +18,21 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
+export const loginWithGoogle = async () => {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error("Erro no login Firebase:", error.code, error.message);
+    if (error.code === 'auth/popup-closed-by-user') {
+      alert("A janela de login foi fechada antes de concluir.");
+    } else if (error.code === 'auth/unauthorized-domain') {
+       alert("Este domínio não está autorizado no Console do Firebase. Adicione o link da Vercel em 'Authorized Domains'.");
+    } else {
+      alert("Erro ao entrar: " + error.message);
+    }
+    throw error;
+  }
+};
+
 export const logout = () => signOut(auth);

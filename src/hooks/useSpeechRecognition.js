@@ -28,18 +28,11 @@ export function useSpeechRecognition() {
   const transcriptionRef  = useRef('');
   const accumulatedRef    = useRef('');
   const restartTimerRef   = useRef(null);
+  const audioCtxRef       = useRef(null);
 
   useEffect(() => {
     transcriptionRef.current = transcription;
   }, [transcription]);
-
-  // Handle Audio Context for Chrome Android (needs user gesture)
-  const resumeAudioContext = useCallback(() => {
-    if (typeof window !== 'undefined' && window.AudioContext) {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
-    }
-  }, []);
 
   const initRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -63,19 +56,16 @@ export function useSpeechRecognition() {
           interim = text;
         }
       }
-      const full = accumulatedRef.current + interim;
+      const full = (accumulatedRef.current + interim).trim();
       transcriptionRef.current = full;
       setTranscription(full);
     };
 
     rec.onerror = (event) => {
       console.warn('Speech recognition error event:', event.error);
-      if (event.error === 'network') {
-         // Silently restart on network blips
-         return;
-      }
+      if (['no-speech', 'audio-capture', 'network'].includes(event.error)) return;
       if (event.error === 'not-allowed') {
-        setError('Microfone bloqueado. Verifique as permissões do site.');
+        setError('Microfone bloqueado pelo navegador.');
       }
     };
 
@@ -90,7 +80,7 @@ export function useSpeechRecognition() {
             recognitionRef.current = initRecognition();
             if (recognitionRef.current) recognitionRef.current.start();
           }
-        }, 300);
+        }, 150); // Faster restart for better responsiveness
       }
     };
 
@@ -101,7 +91,7 @@ export function useSpeechRecognition() {
     const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     if (location.protocol !== 'https:' && !isLocalhost) {
       setIsSupported(false);
-      setError('⚠️ HTTPS necessário para voz no celular.');
+      setError('⚠️ HTTPS é obrigatório para voz no celular.');
       return;
     }
 
@@ -111,11 +101,11 @@ export function useSpeechRecognition() {
       isRecordingRef.current = false;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       try { recognitionRef.current?.abort(); } catch (e) {}
+      if (audioCtxRef.current) audioCtxRef.current.close();
     };
   }, [initRecognition]);
 
   const startRecording = useCallback(async () => {
-    resumeAudioContext();
     setError(null);
     setTranscription('');
     transcriptionRef.current = '';
@@ -123,15 +113,33 @@ export function useSpeechRecognition() {
     audioChunksRef.current = [];
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // 1. Force AudioContext Resume (User Gesture Context)
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        await audioCtxRef.current.resume();
+      }
 
+      // 2. Main Stream
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+
+      // 3. MediaRecorder
       const mimeType = getSupportedMimeType();
-      mediaRecorderRef.current = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-      mediaRecorderRef.current.ondataavailable = (e) => {
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-      mediaRecorderRef.current.start(500);
+      mediaRecorderRef.current = recorder;
+      recorder.start(500);
 
+      // 4. Speech Recognition
       isRecordingRef.current = true;
       setIsRecording(true);
 
@@ -145,9 +153,10 @@ export function useSpeechRecognition() {
       }
 
     } catch (err) {
-      setError('Sem acesso ao microfone.');
+      console.error('Mic Access Error:', err);
+      setError('Erro: Sem acesso ao microfone. Verifique as permissões de "Microfone" e "Som" no Chrome Android.');
     }
-  }, [initRecognition, resumeAudioContext]);
+  }, [initRecognition]);
 
   const stopRecording = useCallback(() => {
     const finalTranscription = transcriptionRef.current;

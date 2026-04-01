@@ -4,16 +4,28 @@ import { NoteList } from './components/NoteList';
 import { useNotesDB } from './hooks/useNotesDB';
 import { Mic, Cloud, Sun, Moon } from 'lucide-react';
 import './index.css';
+import { auth, loginWithGoogle, logout } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 function App() {
   const { notes, addNote, deleteNote, updateNote } = useNotesDB();
   const [searchQuery, setSearchQuery] = useState('');
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   
   // Theme logic
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : true;
   });
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (isDark) {
@@ -43,10 +55,24 @@ function App() {
           </button>
         </div>
         
-        {/* Mock cloud sync indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          <Cloud size={18} /> 
-          <span>Sincronizado localmente</span>
+        <div className="auth-header">
+           {!authLoading && (
+             user ? (
+               <div className="user-info">
+                 <div className="cloud-indicator online" title="Sincronização em nuvem ativa">
+                   <Cloud size={18} />
+                   <span>Cloud Sync</span>
+                 </div>
+                 <img src={user.photoURL} alt={user.displayName} className="user-avatar" />
+                 <span className="user-name">{user.displayName.split(' ')[0]}</span>
+                 <button className="btn btn-sm" onClick={() => logout()}>Sair</button>
+               </div>
+             ) : (
+               <button className="btn btn-primary" onClick={() => loginWithGoogle()}>
+                 Login com Google
+               </button>
+             )
+           )}
         </div>
       </header>
 

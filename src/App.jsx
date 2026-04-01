@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { AudioRecorder } from './components/AudioRecorder';
 import { NoteList } from './components/NoteList';
 import { useNotesDB } from './hooks/useNotesDB';

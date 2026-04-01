@@ -433,11 +433,25 @@ body {
   font-weight: 500;
   padding: 0.25rem 0.6rem;
   border-radius: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+}
+
+.tag:hover {
+  border-color: var(--accent);
+  background-color: var(--accent-glow);
+  transform: translateY(-1px);
 }
 
 .tag.topic {
   background-color: var(--accent-glow);
   border-color: var(--accent);
+}
+
+.tag.topic:hover {
+  background-color: var(--accent);
+  color: white;
 }
 
 .empty-state {

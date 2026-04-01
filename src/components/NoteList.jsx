@@ -202,10 +202,23 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
 
                   <div className="tags-container">
                     {note.topic && (
-                      <span className="tag topic">#{note.topic}</span>
+                      <button 
+                        className="tag topic" 
+                        onClick={() => onSearchChange(note.topic)}
+                        title={`Filtrar por #${note.topic}`}
+                      >
+                        #{note.topic}
+                      </button>
                     )}
                     {note.tags && note.tags.map(tag => (
-                      <span key={tag} className="tag">#{tag}</span>
+                      <button 
+                        key={tag} 
+                        className="tag"
+                        onClick={() => onSearchChange(tag)}
+                        title={`Filtrar por #${tag}`}
+                      >
+                        #{tag}
+                      </button>
                     ))}
                   </div>
                 </div>

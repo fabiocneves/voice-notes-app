@@ -13,31 +13,41 @@ export function AudioRecorder({ onSaveNote }) {
     isSupported,
   } = useSpeechRecognition();
 
+  const [isStopping, setIsStopping] = useState(false);
   // For iOS/unsupported browsers: allow manual text entry
   const [manualText, setManualText] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
 
   const handleStart = () => {
+    setShowManualInput(false);
+    setManualText('');
     startRecording();
   };
 
-  const handleStop = () => {
-    const { audioBlob } = stopRecording();
-    const textToSave = transcription.trim();
+  const handleStop = async () => {
+    setIsStopping(true);
+    try {
+      // stopRecording is now a Promise — it resolves after audio is fully flushed
+      const { finalTranscription, audioBlob } = await stopRecording();
 
-    if (textToSave) {
-      onSaveNote(textToSave, audioBlob);
-    } else if (!isSupported && audioBlob) {
-      // If speech API not supported, still save the audio blob so user can add text manually
-      setShowManualInput(true);
+      if (finalTranscription && finalTranscription.trim()) {
+        onSaveNote(finalTranscription.trim(), audioBlob);
+        setTranscription('');
+      } else if (!isSupported) {
+        // iOS: audio recorded but no transcription — let user type manually
+        setShowManualInput(true);
+      }
+      // else: nothing recorded, do nothing
+    } catch (e) {
+      console.error('Error stopping recording:', e);
+    } finally {
+      setIsStopping(false);
     }
-
-    setTranscription('');
   };
 
   const handleSaveManual = () => {
     if (manualText.trim()) {
-      onSaveNote(manualText, null);
+      onSaveNote(manualText.trim(), null);
       setManualText('');
       setShowManualInput(false);
     }
@@ -58,7 +68,7 @@ export function AudioRecorder({ onSaveNote }) {
       )}
 
       <div className="record-btn-container">
-        {!isRecording && (
+        {!isRecording && !isStopping && (
           <button
             className="record-button-main"
             onClick={handleStart}
@@ -68,10 +78,11 @@ export function AudioRecorder({ onSaveNote }) {
           </button>
         )}
 
-        {isRecording && (
+        {(isRecording || isStopping) && (
           <button
-            className="record-button-main recording"
-            onClick={handleStop}
+            className={`record-button-main ${isRecording ? 'recording' : ''}`}
+            onClick={isRecording ? handleStop : undefined}
+            disabled={isStopping}
             title="Parar gravação"
           >
             <Square size={32} fill="currentColor" />
@@ -100,7 +111,7 @@ export function AudioRecorder({ onSaveNote }) {
       {showManualInput && (
         <div className="transcription-area">
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
-            Áudio salvo! Adicione o texto manualmente:
+            Áudio gravado! Adicione o texto manualmente:
           </p>
           <textarea
             className="transcription-preview active"

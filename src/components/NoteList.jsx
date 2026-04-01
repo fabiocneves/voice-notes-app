@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Search, Cloud, Edit2, Check, X, Calendar } from 'lucide-react';
+import { Trash2, Search, Cloud, Edit2, Check, X, Calendar as CalendarIcon } from 'lucide-react';
+import { CustomCalendar } from './CustomCalendar';
 
 const AudioPlayer = ({ blob }) => {
   const [url, setUrl] = useState('');
@@ -21,11 +22,7 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
   const [filterDate, setFilterDate] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState('');
-  
-  // Get all dates that have notes
-  const datesWithNotes = new Set(
-    notes.map(note => new Date(note.createdAt).toLocaleDateString('en-CA'))
-  );
+  const [showCalendar, setShowCalendar] = useState(false);
   
   const filteredNotes = notes.filter(note => {
     // text search
@@ -59,14 +56,12 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
         if (noteDateStr !== filterDate) return false;
       }
     }
-    
     return true;
   });
 
   // Group notes by date
   const groupedNotes = filteredNotes.reduce((groups, note) => {
      const date = new Date(note.createdAt);
-     
      const today = new Date();
      const yesterday = new Date(today);
      yesterday.setDate(yesterday.getDate() - 1);
@@ -103,6 +98,11 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
     setEditDraft('');
   };
 
+  const formatDateLabel = (d) => {
+    if (!d) return "Data";
+    return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  }
+
   return (
     <div className="notes-container">
       <div className="filters-container">
@@ -117,7 +117,7 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
           />
         </div>
         <div className="date-filter-wrapper range-wrapper">
-          <Calendar className="search-icon" size={20} />
+          <CalendarIcon className="search-icon" size={20} />
           <select 
             className="search-input date-select"
             value={filterRange}
@@ -131,29 +131,33 @@ export function NoteList({ notes, searchQuery, onSearchChange, onDeleteNote, onU
           </select>
         </div>
         {filterRange === 'custom' && (
-          <div className="date-filter-wrapper calendar-picker-container">
-            <input 
-              type="date" 
-              className={`search-input date-input ${datesWithNotes.has(filterDate) ? 'has-content' : ''}`}
-              style={{ paddingLeft: '1rem' }}
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              title="Filtrar por data"
-            />
-            <div className="calendar-status-dot-container">
-               {datesWithNotes.size > 0 && Array.from(datesWithNotes).map(d => (
-                 <div key={d} className="mini-dot" title={`Nota em ${d}`} />
-               ))}
-            </div>
-            {filterDate && (
+          <div className="date-filter-wrapper">
+             <button 
+               className={`search-input date-select-btn ${filterDate ? 'active' : ''}`}
+               onClick={() => setShowCalendar(true)}
+             >
+               <CalendarIcon size={18} />
+               {filterDate ? formatDateLabel(filterDate) : 'Selecionar'}
+             </button>
+             {filterDate && (
                <button className="clear-date-btn" onClick={() => setFilterDate('')} title="Limpar">
                  <X size={14} />
                </button>
-            )}
+             )}
           </div>
         )}
       </div>
 
+      {showCalendar && (
+        <CustomCalendar 
+          notes={notes}
+          selectedDate={filterDate}
+          onDateSelect={setFilterDate}
+          onClose={() => setShowCalendar(false)}
+        />
+      )}
+
+      {/* Rest of note cards... */}
       {Object.keys(groupedNotes).length === 0 ? (
         <div className="empty-state">
           <Cloud size={48} opacity={0.2} />

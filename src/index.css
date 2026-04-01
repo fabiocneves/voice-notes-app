@@ -170,6 +170,44 @@ body {
   color: var(--text-muted);
 }
 
+/* Mode toggle */
+.mode-toggle {
+  display: flex;
+  background: var(--bg-main);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0.5rem;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: inherit;
+  transition: var(--transition);
+}
+
+.mode-btn:hover {
+  color: var(--text-main);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
 .record-btn-container {
   display: flex;
   justify-content: center;

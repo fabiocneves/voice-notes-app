@@ -21,32 +21,50 @@ export function useSpeechRecognition() {
   const [error, setError] = useState(null);
   const [isSupported, setIsSupported] = useState(true);
 
-  // Refs to avoid stale closures in async callbacks
-  const recognitionRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const isRecordingRef = useRef(false);
-  const transcriptionRef = useRef('');   // <-- always has the latest transcript
-  const accumulatedRef = useRef('');      // <-- runs across multiple recognition segments
+  const recognitionRef    = useRef(null);
+  const mediaRecorderRef  = useRef(null);
+  const audioChunksRef    = useRef([]);
+  const isRecordingRef    = useRef(false);
+  const transcriptionRef  = useRef('');
+  const accumulatedRef    = useRef('');
+  const restartTimerRef   = useRef(null);
 
-  // Keep transcriptionRef in sync with state
   useEffect(() => {
     transcriptionRef.current = transcription;
   }, [transcription]);
 
   useEffect(() => {
+    // 1. HTTPS guard — Web Speech API requires HTTPS on mobile
+    const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (location.protocol !== 'https:' && !isLocalhost) {
+      setIsSupported(false);
+      setError('⚠️ A transcrição requer conexão segura (HTTPS). Acesse o app pelo link seguro (https://...).');
+      return;
+    }
+
+    // 2. API support check
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setIsSupported(false);
-      setError('Seu navegador não suporta transcrição automática. A gravação de áudio ainda funcionará, mas o texto precisará ser digitado manualmente. No Android, use o Chrome. No iPhone, use o Safari 14.1+.');
+      setError('Seu navegador não suporta transcrição automática. No Android use o Chrome, no iPhone o Safari 14.1+. Você ainda pode adicionar notas manualmente.');
       return;
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;      // more reliable on Android
-    recognition.interimResults = true;
-    recognition.lang = 'pt-BR';
+    // Keep continuous:true — it's actually more stable on Android when combined
+    // with a proper restart-on-end with a small delay
+    recognition.continuous      = true;
+    recognition.interimResults  = true;
+    recognition.lang            = 'pt-BR';
     recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      // Recognition successfully started — clear any pending restart timer
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+    };
 
     recognition.onresult = (event) => {
       let interim = '';
@@ -64,21 +82,32 @@ export function useSpeechRecognition() {
     };
 
     recognition.onerror = (event) => {
-      // 'no-speech' and 'aborted' are benign on mobile
-      if (event.error === 'no-speech' || event.error === 'aborted') return;
-      console.error('Speech recognition error:', event.error);
-      // Don't show network errors as fatal — just log them
+      // These are benign / expected on mobile — do NOT surface to user
+      if (['no-speech', 'aborted', 'audio-capture'].includes(event.error)) return;
+
       if (event.error === 'network') {
-        console.warn('Network error in speech recognition — will retry');
+        // Network blip — schedule a restart instead of giving up
+        if (isRecordingRef.current) {
+          restartTimerRef.current = setTimeout(() => {
+            if (!isRecordingRef.current) return;
+            try { recognition.start(); } catch (e) { /* ignore */ }
+          }, 500);
+        }
         return;
       }
+
+      console.error('Speech recognition error:', event.error);
       setError(`Erro no reconhecimento de voz: ${event.error}`);
     };
 
     recognition.onend = () => {
-      // Restart if we are still supposed to be recording
+      // CRITICAL FIX: Android Chrome needs ~250ms gap between sessions
+      // Calling start() immediately causes a silent InvalidStateError
       if (isRecordingRef.current) {
-        try { recognition.start(); } catch (e) { /* race condition, ignore */ }
+        restartTimerRef.current = setTimeout(() => {
+          if (!isRecordingRef.current) return;
+          try { recognition.start(); } catch (e) { /* ignore */ }
+        }, 250);
       }
     };
 
@@ -86,6 +115,7 @@ export function useSpeechRecognition() {
 
     return () => {
       isRecordingRef.current = false;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       try { recognition.abort(); } catch (e) { /* ignore */ }
     };
   }, []);
@@ -94,8 +124,8 @@ export function useSpeechRecognition() {
     setError(null);
     setTranscription('');
     transcriptionRef.current = '';
-    accumulatedRef.current = '';
-    audioChunksRef.current = [];
+    accumulatedRef.current   = '';
+    audioChunksRef.current   = [];
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -106,15 +136,12 @@ export function useSpeechRecognition() {
         : new MediaRecorder(stream);
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(500); // collect every 500ms for less data loss
+      mediaRecorder.start(500);
 
-      // Start speech recognition
       if (recognitionRef.current) {
         isRecordingRef.current = true;
         try { recognitionRef.current.start(); } catch (e) {
@@ -126,7 +153,7 @@ export function useSpeechRecognition() {
     } catch (err) {
       console.error('Error starting recording:', err);
       if (err.name === 'NotAllowedError') {
-        setError('Permissão de microfone negada. Verifique as configurações do seu navegador e recarregue a página.');
+        setError('Permissão de microfone negada. Verifique as configurações do navegador e recarregue a página.');
       } else if (err.name === 'NotFoundError') {
         setError('Nenhum microfone encontrado neste dispositivo.');
       } else {
@@ -135,20 +162,18 @@ export function useSpeechRecognition() {
     }
   }, []);
 
-  /**
-   * Returns a Promise that resolves to { finalTranscription, audioBlob }
-   * once the MediaRecorder has fully flushed all audio chunks.
-   */
   const stopRecording = useCallback(() => {
-    // Take the transcription NOW via the ref, before any state clears
     const finalTranscription = transcriptionRef.current;
 
-    // Signal onend to NOT restart recognition
     isRecordingRef.current = false;
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
     setIsRecording(false);
 
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch (e) { /* ignore */ }
+      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
     }
 
     return new Promise((resolve) => {
@@ -160,7 +185,6 @@ export function useSpeechRecognition() {
 
       const mimeType = recorder.mimeType || 'audio/webm';
 
-      // onstop fires AFTER the last ondataavailable, so the blob is complete here
       recorder.onstop = () => {
         recorder.stream.getTracks().forEach(track => track.stop());
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });

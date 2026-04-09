@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mic, Square, PenLine } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Mic, Square, Save } from 'lucide-react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 
 export function AudioRecorder({ onSaveNote }) {
@@ -13,22 +13,31 @@ export function AudioRecorder({ onSaveNote }) {
     isSupported,
   } = useSpeechRecognition();
 
-  const [isStopping, setIsStopping]     = useState(false);
-  const [mode, setMode]                  = useState('voice'); // 'voice' | 'manual'
-  const [manualText, setManualText]      = useState('');
+  const [isStopping, setIsStopping] = useState(false);
+  const [content, setContent] = useState('');
+  const lastAudioBlobRef = useRef(null);
 
-  /* ─── Voice handlers ─── */
-  const handleStart = () => startRecording();
+  // Sync the speech recognition text into our editable box
+  useEffect(() => {
+    if (isRecording) {
+      setContent(transcription);
+    }
+  }, [transcription, isRecording]);
+
+  const handleStart = () => {
+    lastAudioBlobRef.current = null;
+    setContent('');
+    startRecording();
+  };
 
   const handleStop = async () => {
     setIsStopping(true);
     try {
       const { finalTranscription, audioBlob } = await stopRecording();
-      const text = finalTranscription?.trim();
-      if (text) {
-        onSaveNote(text, audioBlob);
-        setTranscription('');
-      }
+      // Keep output in textarea for any manual fixes
+      setContent(finalTranscription || content);
+      lastAudioBlobRef.current = audioBlob;
+      setTranscription(''); // Clear hook
     } catch (e) {
       console.error('Error stopping recording:', e);
     } finally {
@@ -36,118 +45,84 @@ export function AudioRecorder({ onSaveNote }) {
     }
   };
 
-  /* ─── Manual note handler ─── */
-  const handleSaveManual = () => {
-    if (manualText.trim()) {
-      onSaveNote(manualText.trim(), null);
-      setManualText('');
+  const handleSave = () => {
+    if (content.trim()) {
+      onSaveNote(content.trim(), lastAudioBlobRef.current);
+      setContent('');
+      lastAudioBlobRef.current = null;
     }
   };
 
-  const handleManualKeyDown = (e) => {
-    // Ctrl/Cmd + Enter saves
+  const handleKeyDown = (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      handleSaveManual();
+      handleSave();
     }
   };
 
-  const liveLabel = isSupported ? 'Gravando e transcrevendo...' : 'Gravando áudio...';
+  const liveLabel = isSupported ? 'Gravando sua voz...' : 'Gravando áudio (sem suporte a texto)...';
 
   return (
     <div className="card record-panel">
-
-      {/* Mode Toggle */}
-      <div className="mode-toggle">
-        <button
-          className={`mode-btn ${mode === 'voice' ? 'active' : ''}`}
-          onClick={() => setMode('voice')}
-        >
-          <Mic size={16} /> Voz
-        </button>
-        <button
-          className={`mode-btn ${mode === 'manual' ? 'active' : ''}`}
-          onClick={() => setMode('manual')}
-        >
-          <PenLine size={16} /> Manual
-        </button>
-      </div>
-
-      {/* Error banner */}
-      {error && mode === 'voice' && (
+      {error && (
         <div className="error-banner">{error}</div>
       )}
 
-      {/* ── VOICE MODE ── */}
-      {mode === 'voice' && (
-        <>
-          <div className="record-btn-container">
-            {!isRecording && !isStopping && (
-              <button
-                className="record-button-main"
-                onClick={handleStart}
-                title="Começar a gravar"
-              >
-                <Mic size={32} />
-              </button>
-            )}
-            {(isRecording || isStopping) && (
-              <button
-                className={`record-button-main ${isRecording ? 'recording' : ''}`}
-                onClick={isRecording ? handleStop : undefined}
-                disabled={isStopping}
-                title="Parar gravação"
-              >
-                <Square size={32} fill="currentColor" />
-              </button>
-            )}
+      <div className="transcription-area">
+        {isRecording && (
+          <div className="live-indicator" style={{ marginBottom: '0.5rem' }}>
+            <span className="live-dot"></span> {liveLabel}
           </div>
-
-          {isRecording && (
-            <div className="transcription-area">
-              <div className="live-indicator">
-                <span className="live-dot"></span> {liveLabel}
-              </div>
-              {isSupported && (
-                <textarea
-                  className="transcription-preview active"
-                  value={transcription}
-                  readOnly
-                  disabled
-                  placeholder="A transcrição aparecerá aqui..."
-                />
-              )}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ── MANUAL MODE ── */}
-      {mode === 'manual' && (
-        <div className="transcription-area" style={{ marginTop: '0.5rem' }}>
-          <textarea
-            className="transcription-preview active"
-            value={manualText}
-            onChange={(e) => setManualText(e.target.value)}
-            onKeyDown={handleManualKeyDown}
-            placeholder="Digite sua nota aqui... (Ctrl+Enter para salvar)"
-            rows={6}
-            autoFocus
-          />
-          <div className="save-controls">
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
-              Ctrl+Enter para salvar
-            </span>
+        )}
+        
+        <textarea
+          className={`transcription-preview active ${isRecording ? 'recording-active' : ''}`}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Comece a falar no microfone ou digite sua nota aqui..."
+          rows={6}
+          disabled={isRecording} 
+        />
+        
+        <div className="action-buttons-group" style={{ display: 'flex', gap: '1rem', marginTop: '1rem', alignItems: 'center' }}>
+          {!isRecording && !isStopping && (
             <button
-              className="btn btn-primary"
-              onClick={handleSaveManual}
-              disabled={!manualText.trim()}
+              className="record-button-main"
+              onClick={handleStart}
+              title="Gravar com a voz"
+              style={{ width: 'auto', padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', gap: '0.5rem', flex: 1 }}
             >
-              Salvar Nota
+              <Mic size={20} /> Falar
             </button>
-          </div>
+          )}
+
+          {(isRecording || isStopping) && (
+            <button
+              className={`record-button-main ${isRecording ? 'recording' : ''}`}
+              onClick={isRecording ? handleStop : undefined}
+              disabled={isStopping}
+              title="Parar gravação"
+              style={{ width: 'auto', padding: '0.5rem 1rem', borderRadius: '8px', display: 'flex', gap: '0.5rem', flex: 1 }}
+            >
+              <Square size={20} fill="currentColor" /> Parar
+            </button>
+          )}
+
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!content.trim() || isRecording || isStopping}
+            style={{ flex: 1, height: '100%', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}
+          >
+            <Save size={20} /> Salvar
+          </button>
         </div>
-      )}
+        
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.5rem' }}>
+          Dica: Você pode editar o texto antes de salvar. (Ctrl+Enter salva rápido)
+        </div>
+      </div>
     </div>
   );
 }

@@ -25,14 +25,19 @@ export function useSpeechRecognition() {
   const mediaRecorderRef  = useRef(null);
   const audioChunksRef    = useRef([]);
   const isRecordingRef    = useRef(false);
-  const transcriptionRef  = useRef('');
-  const accumulatedRef    = useRef('');
+  
+  const finalPartsRef     = useRef([]); // Array of confirmed sentences
+  const interimTextRef    = useRef(''); // Current unconfirmed sentence
+  
   const restartTimerRef   = useRef(null);
   const audioCtxRef       = useRef(null);
 
-  useEffect(() => {
-    transcriptionRef.current = transcription;
-  }, [transcription]);
+  const updateTranscriptionState = useCallback(() => {
+    const finalStr = finalPartsRef.current.join(' ').trim();
+    const interimStr = interimTextRef.current.trim();
+    const full = [finalStr, interimStr].filter(Boolean).join(' ');
+    setTranscription(full);
+  }, []);
 
   const initRecognition = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -45,20 +50,27 @@ export function useSpeechRecognition() {
     rec.continuous = true; 
     rec.interimResults = true;
     rec.lang = 'pt-BR';
+    rec.maxAlternatives = 1;
 
     rec.onresult = (event) => {
       let interim = '';
+      let newlyFinal = '';
+      
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          accumulatedRef.current += text + ' ';
+          newlyFinal += text + ' ';
         } else {
-          interim = text;
+          interim += text;
         }
       }
-      const full = (accumulatedRef.current + interim).trim();
-      transcriptionRef.current = full;
-      setTranscription(full);
+      
+      if (newlyFinal) {
+        finalPartsRef.current.push(newlyFinal.trim());
+      }
+      
+      interimTextRef.current = interim;
+      updateTranscriptionState();
     };
 
     rec.onerror = (event) => {
@@ -71,27 +83,24 @@ export function useSpeechRecognition() {
 
     rec.onend = () => {
       if (isRecordingRef.current) {
-        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-        restartTimerRef.current = setTimeout(() => {
-          if (!isRecordingRef.current) return;
-          try {
-            recognitionRef.current.start();
-          } catch (e) {
-            recognitionRef.current = initRecognition();
-            if (recognitionRef.current) recognitionRef.current.start();
-          }
-        }, 150); // Faster restart for better responsiveness
+        // Immediately restart to prevent dropping words
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          recognitionRef.current = initRecognition();
+          if (recognitionRef.current) recognitionRef.current.start();
+        }
       }
     };
 
     return rec;
-  }, []);
+  }, [updateTranscriptionState]);
 
   useEffect(() => {
     const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     if (location.protocol !== 'https:' && !isLocalhost) {
       setIsSupported(false);
-      setError('⚠️ HTTPS é obrigatório para voz no celular.');
+      setError('⚠️ HTTPS é obrigatório para voz.');
       return;
     }
 
@@ -101,19 +110,19 @@ export function useSpeechRecognition() {
       isRecordingRef.current = false;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       try { recognitionRef.current?.abort(); } catch (e) {}
-      if (audioCtxRef.current) audioCtxRef.current.close();
+      if (audioCtxRef.current) audioCtxRef.current.close().catch(() => {});
     };
   }, [initRecognition]);
 
   const startRecording = useCallback(async () => {
     setError(null);
     setTranscription('');
-    transcriptionRef.current = '';
-    accumulatedRef.current = '';
+    finalPartsRef.current = [];
+    interimTextRef.current = '';
     audioChunksRef.current = [];
 
     try {
-      // 1. Force AudioContext Resume (User Gesture Context)
+      // 1. Force AudioContext Resume 
       if (!audioCtxRef.current) {
         audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
       }
@@ -154,32 +163,41 @@ export function useSpeechRecognition() {
 
     } catch (err) {
       console.error('Mic Access Error:', err);
-      setError('Erro: Sem acesso ao microfone. Verifique as permissões de "Microfone" e "Som" no Chrome Android.');
+      setError('Erro: Sem acesso ao microfone. Verifique as permissões de gravação.');
     }
   }, [initRecognition]);
 
   const stopRecording = useCallback(() => {
-    const finalTranscription = transcriptionRef.current;
     isRecordingRef.current = false;
     setIsRecording(false);
-    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-
+    
+    // We capture what was currently transcribed
+    const fullText = [finalPartsRef.current.join(' '), interimTextRef.current].filter(Boolean).join(' ').trim();
+    
     try { recognitionRef.current?.stop(); } catch (e) {}
 
     return new Promise((resolve) => {
       const recorder = mediaRecorderRef.current;
       if (!recorder || recorder.state === 'inactive') {
-        resolve({ finalTranscription, audioBlob: null });
+        resolve({ finalTranscription: fullText, audioBlob: null });
         return;
       }
       recorder.onstop = () => {
         recorder.stream.getTracks().forEach(t => t.stop());
         const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
-        resolve({ finalTranscription, audioBlob });
+        resolve({ finalTranscription: fullText, audioBlob });
       };
+      // Sometimes recorder.stop() takes a moment. For responsive UI, we can also just timeout.
+      const fallbackTimer = setTimeout(() => {
+        if (recorder.state !== 'inactive') {
+           recorder.onstop = null; // Remove listener
+           resolve({ finalTranscription: fullText, audioBlob: new Blob(audioChunksRef.current) });
+        }
+      }, 500);
+      
       recorder.stop();
     });
   }, []);
 
-  return { isRecording, transcription, startRecording, stopRecording, error, isSupported };
+  return { isRecording, transcription, setTranscription, startRecording, stopRecording, error, isSupported };
 }
